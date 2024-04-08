@@ -1,0 +1,8 @@
+*.jpg
+*.xlsx
+cropped/
+output/
+*.pyd
+*.pyc
+*.pyo
+env/
