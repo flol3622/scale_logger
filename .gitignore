@@ -6,3 +6,7 @@ output/
 *.pyc
 *.pyo
 env/
+dist/
+build/
+*.spec
+data/

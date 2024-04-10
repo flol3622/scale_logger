@@ -1,52 +1,34 @@
-## Astral-sh UV
-
-### Getting started
-
+## Conda
 ```bash
-# On macOS and Linux.
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# create environment
+conda create -n <name-env> python=3.8
 
-# On Windows.
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# activate environment
+conda activate <name-env>
 
-# With pip.
-pip install uv
+# deactivate environment
+conda deactivate
 ```
 
-### Create virtual environment
-
+#### Recreate environment
 ```bash
-uv venv  # Create a virtual environment at .venv.
+conda env create -f environment.yml
 ```
 
-### Activate virtual environment
-
+#### Update environment
 ```bash
-# On macOS and Linux.
-source .venv/bin/activate
+# save updated environment.yml
+conda env export > environment.yml
 
-# On Windows.
-.venv\Scripts\activate
+# update environment with environment.yml
+conda env update -f environment.yml
 ```
 
-# Install packages
-
+#### Conda shell
 ```bash
-uv pip install flask                # Install Flask.
-uv pip install -r requirements.txt  # Install from a requirements.txt file.
-uv pip install -e .                 # Install the current project in editable mode.
-uv pip install "package @ ."        # Install the current project from disk.
-uv pip install "flask[dotenv]"      # Install Flask with "dotenv" extra.
-```
+conda init (-all)
+# then restart terminal
 
-### Generate requirements.txt
-
-```bash
-uv pip freeze | uv pip compile - -o requirements.txt  # Lock the current environment.
-```
-
-### Update to requirements.txt
-
-```bash
-uv pip sync requirements.txt
+# exit conda shell
+conda deactivate
 ```
