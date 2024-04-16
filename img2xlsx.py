@@ -1,35 +1,195 @@
-from paddleocr import PaddleOCR
 import os
+from datetime import datetime
+
 import cv2
+import numpy as np
 import xlsxwriter
 
-
-def ocr_image(image_path, ocr):
-    result = ocr.ocr(image_path, cls=True)
-    return result[0][0][1][0]
+INTERVV = [0.09, 0.29, 0.5, 0.7, 0.91]
+INTERVH = [0.33, 0.6]
 
 
-def cropUI(image_path):
-    # small opencv window to crop the image
+def draw_interactive_polygon(image_path):
+    # Initialize variables
+    points = []
+    moving = False
+    current_point_index = -1
+
+    original_image = cv2.flip(cv2.imread(image_path), 1)
+    image = original_image.copy()
+    window_name = "Polygon Drawer"
+
+    def interpolate(p1, p2, t):
+        """Linearly interpolate between points p1 and p2 with parameter t"""
+        return [int((1 - t) * p1[0] + t * p2[0]), int((1 - t) * p1[1] + t * p2[1])]
+
+    def draw_additional_lines(temp_image, points):
+        """Draw lines between interpolated points on the first, third, second, and fourth edges"""
+        if len(points) == 4:
+            # Intervals for the first-third edge connection
+            edge1_points = [interpolate(points[0], points[1], t) for t in INTERVV]
+            edge3_points = [interpolate(points[2], points[3], 1 - t) for t in INTERVV]
+            for p1, p3 in zip(edge1_points, edge3_points):
+                cv2.line(temp_image, tuple(p1), tuple(p3), (0, 255, 255), 1)
+
+            # Intervals for the second-fourth edge connection
+            edge2_points = [interpolate(points[1], points[2], t) for t in INTERVH]
+            edge4_points = [interpolate(points[3], points[0], 1 - t) for t in INTERVH]
+            for p2, p4 in zip(edge2_points, edge4_points):
+                cv2.line(temp_image, tuple(p2), tuple(p4), (255, 0, 255), 1)
+        return temp_image
+
+    def draw_polygon(temp_image, points, closed=False):
+        if len(points) > 1:
+            color = (0, 255, 0) if not closed else (255, 0, 0)
+            cv2.polylines(temp_image, [np.array(points, np.int32)], closed, color, 2)
+        for point in points:
+            cv2.circle(temp_image, tuple(point), 5, (0, 0, 255), -1)
+        temp_image = draw_additional_lines(temp_image, points)
+        return temp_image
+
+    def mouse_events(event, x, y, flags, param):
+        nonlocal points, moving, current_point_index, image, original_image
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for i, point in enumerate(points):
+                if abs(x - point[0]) < 5 and abs(y - point[1]) < 5:
+                    moving = True
+                    current_point_index = i
+                    return
+            if len(points) < 4:
+                points.append([x, y])
+                image = draw_polygon(
+                    original_image.copy(), points, closed=(len(points) == 4)
+                )
+
+        elif event == cv2.EVENT_MOUSEMOVE:
+            if moving and current_point_index != -1:
+                points[current_point_index] = [x, y]
+                image = draw_polygon(
+                    original_image.copy(), points, closed=(len(points) == 4)
+                )
+
+        elif event == cv2.EVENT_LBUTTONUP:
+            moving = False
+            current_point_index = -1
+
+    cv2.namedWindow(window_name)
+    cv2.setMouseCallback(window_name, mouse_events)
+
+    # Main loop
+    while True:
+        cv2.imshow(window_name, image)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 13:  # Enter key
+            cv2.destroyAllWindows()
+            return points  # Return the coordinates when Enter is pressed
+
+
+def warp_polygon(image_path, polygon_points):
+    """Warps the quadrilateral defined by polygon_points into a rectangle."""
+
     image = cv2.imread(image_path)
-    r = cv2.selectROI(image)
-    cv2.destroyAllWindows()
+    image = cv2.flip(image, 1)
 
-    return r
+    pts_src = np.array(polygon_points).astype(np.float32)
+
+    # Define points in destination (output rectangle) image
+    width = 200  # Width of the rectangle
+    height = 50  # Height of the rectangle
+    pts_dst = np.array(
+        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
+    ).astype(np.float32)
+
+    # Calculate the perspective transform matrix
+    matrix = cv2.getPerspectiveTransform(pts_src, pts_dst)
+
+    # Warp the image
+    warped_image = cv2.warpPerspective(image, matrix, (width, height))
+    return warped_image
 
 
-def cropImage(image_path, r, flip, cropped_folder):
-    # crop the image and save it
-    image = cv2.imread(image_path)
-    cropped = image[int(r[1]) : int(r[1] + r[3]), int(r[0]) : int(r[0] + r[2])]
+def extract_line_pixels(warped_image, intervalsV, intervalsH):
+    """Extracts pixel data along vertical and horizontal lines at given intervals."""
+    height, width, channels = warped_image.shape
 
-    # save with new name
-    if flip == "y":
-        cropped = cv2.flip(cropped, 1)
+    pixel_data = []
 
-    # save in subfolder cropped
-    new_name = os.path.join(cropped_folder, image_path.split("/")[-1])
-    cv2.imwrite(new_name, cropped)
+    # Vertical lines
+    for i in intervalsV:
+        x_coord = int(width * i)
+        vertical_line = warped_image[:, x_coord, 1]
+        pixel_data.append(vertical_line)
+
+    # Horizontal lines
+    for i in intervalsH:
+        y_coord = int(height * i)
+        horizontal_line = warped_image[y_coord, :, 1]
+        pixel_data.append(horizontal_line)
+
+    return pixel_data
+
+
+def peaks(data, boxes=2):
+    # split data in boxes
+    data = np.array_split(data, boxes)
+
+    # get the maximum value in each box
+    data = [np.max(d) for d in data]
+    data = [d > 150 for d in data]
+    return np.array(data).astype(int).tolist()
+
+
+digits = {
+    0: [[1, 0, 1], [1, 1], [1, 1]],
+    1: [[0, 0, 0], [0, 1], [0, 1]],
+    2: [[1, 1, 1], [0, 1], [1, 0]],
+    3: [[1, 1, 1], [0, 1], [0, 1]],
+    4: [[0, 1, 0], [1, 1], [0, 1]],
+    5: [[1, 1, 1], [1, 0], [0, 1]],
+    6: [[1, 1, 1], [1, 0], [1, 1]],
+    7: [[1, 0, 0], [0, 1], [0, 1]],
+    8: [[1, 1, 1], [1, 1], [1, 1]],
+    9: [[1, 1, 1], [1, 1], [0, 1]],
+}
+
+
+def OCRdigit(vertical, horizontal1, horizontal2):
+    # get times it goes above 150, remove subsequent values
+    digit = [peaks(vertical, 3), peaks(horizontal1), peaks(horizontal2)]
+    digit = [key for key, value in digits.items() if value == digit]
+    return digit[0]
+
+
+def OCRscreen(pixels_along_lines):
+    data = (
+        pixels_along_lines[:5]
+        + [
+            pixels_along_lines[5][:40],
+            pixels_along_lines[5][40:80],
+            pixels_along_lines[5][80:120],
+            pixels_along_lines[5][120:160],
+            pixels_along_lines[5][160:],
+        ]
+        + [
+            pixels_along_lines[6][:40],
+            pixels_along_lines[6][40:80],
+            pixels_along_lines[6][80:120],
+            pixels_along_lines[6][120:160],
+            pixels_along_lines[6][160:],
+        ]
+    )
+
+    text = ""
+    for i in range(5):
+        text += str(OCRdigit(data[i], data[i + 5], data[i + 10]))
+    return text
+
+
+def writeDate(worksheet, row, column, date, format):
+    original_format = "%Y-%m-%d %H-%M-%S-%f"
+    parsed_datetime = datetime.strptime(date, original_format)
+
+    worksheet.write_datetime(row, column, parsed_datetime, format)
 
 
 def data2excel(data):
@@ -38,11 +198,13 @@ def data2excel(data):
     workbook = xlsxwriter.Workbook(fileName)
     worksheet = workbook.add_worksheet()
 
+    dateFormat = workbook.add_format({"num_format": "dd/mm/yy hh:mm:ss"})
+
     # write the data
     row = 0
     for key, value in data.items():
         date = key.split(" ", 1)[1][:-4]
-        worksheet.write(row, 0, date)
+        writeDate(worksheet, row, 0, date, dateFormat)
         worksheet.write(row, 1, value)
         try:
             worksheet.write(row, 2, float(value[:6]))
@@ -54,43 +216,23 @@ def data2excel(data):
 
 
 def main():
-    # ocr settings
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    ocr = PaddleOCR(use_angle_cls=True, lang="en")
+    folder = "./"
+    images = [f for f in os.listdir(folder) if f.endswith(".jpg")]
 
-    # *** start GUIs ***
-    images = [f for f in os.listdir(FOLDER) if f.endswith(".jpg")]
-    region = cropUI(os.path.join(FOLDER, images[0]))
+    region = draw_interactive_polygon(folder + images[0])
 
-    flip = input("Do you want to flip the images horizontaly? (y/n): ")
-
-    cropped_folder = os.path.join(FOLDER, "cropped")
-    if not os.path.exists(cropped_folder):
-        os.makedirs(cropped_folder)
-
-    # *** start cropping ***
-    for image in images:
-        cropImage(os.path.join(FOLDER, image), region, flip, cropped_folder)
-
-    # *** start OCR ***
-    cropped_images = [f for f in os.listdir(cropped_folder) if f.endswith(".jpg")]
     data = {}
-    for image in cropped_images:
+    for image in images:
         try:
-            path = os.path.join(cropped_folder, image)
-            text = ocr_image(path, ocr)
-        except Exception as _:
-            print("Error in cropped image")
+            warped = warp_polygon(folder + image, region)
+            pixels_along_lines = extract_line_pixels(warped, INTERVV, INTERVH)
+            data[image] = OCRscreen(pixels_along_lines)
+        except Exception as e:
+            print(f"Error processing {image}: {e}")
             continue
 
-        data[image] = text
-
-    # *** save data in excel ***
     data2excel(data)
-
-    print("All images cropped successfully")
 
 
 if __name__ == "__main__":
-    FOLDER = "data/"
     main()
