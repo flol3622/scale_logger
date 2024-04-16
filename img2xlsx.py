@@ -1,9 +1,13 @@
 import os
+import sys
 from datetime import datetime
 
 import cv2
 import numpy as np
 import xlsxwriter
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
 
 INTERVV = [0.09, 0.29, 0.5, 0.7, 0.91]
 INTERVH = [0.33, 0.6]
@@ -215,11 +219,11 @@ def data2excel(data):
     workbook.close()
 
 
-def main():
+def main(refImage):
     folder = "./"
     images = [f for f in os.listdir(folder) if f.endswith(".jpg")]
 
-    region = draw_interactive_polygon(folder + images[0])
+    region = draw_interactive_polygon(refImage)
 
     data = {}
     for image in images:
@@ -233,6 +237,49 @@ def main():
 
     data2excel(data)
 
+# Initialize the Rich console
+console = Console()
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        imagePath = sys.argv[1]
+        console.print(
+            Markdown(f"""
+> You have provided the following image: `{imagePath}`
+
+In the next step:
+  1. Draw a polygon around the device digits by clicking: top-left, top-right, bottom-right, bottom-left vertices.
+  2. Confirm by pressing Enter.
+                               
+The program will process all images and save the results to `data.xlsx`.""")
+        )
+        input("\nPress Enter to start processing...")
+        # *** Call the main function to process the image ***
+        main(imagePath)
+        console.print(
+            Panel(
+                "All data has been processed and saved to data.xlsx", style="bold green"
+            )
+        )
+        input("""
+Do not forget to rename the excel file to the correct name to avoid overwriting next time.
+Press Enter to exit...""")
+
+    else:
+        instructions = """
+## WORKFLOW:
+
+1. Place the executable in a folder with .jpg images from the device.
+    - Ensure consistent camera orientation.
+
+2. Drop an image on the executable to start:
+    - Draw a polygon around the device digits by clicking: top-left, top-right, bottom-right, bottom-left vertices.
+    - Confirm by pressing Enter.
+
+3. The program processes all images and saves the results to `data.xlsx`.
+        """
+        console.print(
+            Panel("No file was dragged onto the executable!", style="bold red")
+        )
+        console.print(Markdown(instructions))
+        input("\nPress Enter to exit...")
