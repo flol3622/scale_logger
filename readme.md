@@ -1,34 +1,37 @@
-## Conda
-```bash
-# create environment
-conda create -n <name-env> python=3.8
+# Setup Guide
 
-# activate environment
-conda activate <name-env>
+This README is for personal reference and for fellow researchers replicating results. **UV from Astral** manages the environment.
 
-# deactivate environment
-conda deactivate
-```
+## 🚀 Quick Setup
 
-#### Recreate environment
-```bash
-conda env create -f environment.yml
-```
+1. **Install UV**  
+   - Windows:  
+     ```bash
+     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+     ```
+   - Others: [UV Installation Guide](https://docs.astral.sh/uv/getting-started/installation/)
 
-#### Update environment
-```bash
-# save updated environment.yml
-conda env export > environment.yml
+2. **Update UV:** `uv self update`
 
-# update environment with environment.yml
-conda env update -f environment.yml
-```
+3. **Recreate virtual environment:** `uv sync`
+   > ⚠️ UV updates `.venv` automatically, no need to `uv sync` after adding packages.
 
-#### Conda shell
-```bash
-conda init (-all)
-# then restart terminal
+## 🛠️ Usage
 
-# exit conda shell
-conda deactivate
+- **Add a package**: `uv add <package-name>`
+- **Remove a package**: `uv remove <package-name>`
+- **Run a script**: `uv run <script-name>`  
+  > 💡 VSCode detects `.venv` when run from the UI.
+
+
+## 🔬 Specific prioject usage
+### 💿 Create executable
+
+- run auto-py-to-exe `uv run auto-py-to-exe`
+- scroll to th bottom to load the configuration file (auto-py-to-exe_conf.json)
+- chaneg the name to the required version
+
+### Try python script
+```shell
+uv run img2xlsx.py "[img name in root folder].jpg"
 ```

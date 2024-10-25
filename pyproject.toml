@@ -1,0 +1,13 @@
+[project]
+name = "scale-logger"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "auto-py-to-exe>=2.44.2",
+    "numpy>=2.1.2",
+    "opencv-python>=4.10.0.84",
+    "rich>=13.9.3",
+    "xlsxwriter>=3.2.0",
+]

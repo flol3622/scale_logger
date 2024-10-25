@@ -9,7 +9,10 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-INTERVV = [0.09, 0.29, 0.5, 0.7, 0.91]
+# Updated INTERVV to accommodate 6 digits by adding an extra position
+# The positions are calculated to evenly distribute across the width
+num_digits = 6  # Maximum number of digits expected
+INTERVV = [(i + 0.5) / num_digits for i in range(num_digits)]
 INTERVH = [0.33, 0.6]
 
 
@@ -97,8 +100,9 @@ def warp_polygon(image_path, polygon_points):
 
     pts_src = np.array(polygon_points).astype(np.float32)
 
-    # Define points in destination (output rectangle) image
-    width = 200  # Width of the rectangle
+    num_digits = len(INTERVV)
+    segment_width = 40
+    width = num_digits * segment_width  # Adjusted width to accommodate 6 digits
     height = 50  # Height of the rectangle
     pts_dst = np.array(
         [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
@@ -165,27 +169,33 @@ def OCRdigit(vertical, horizontal1, horizontal2):
 
 
 def OCRscreen(pixels_along_lines):
-    data = (
-        pixels_along_lines[:5]
-        + [
-            pixels_along_lines[5][:40],
-            pixels_along_lines[5][40:80],
-            pixels_along_lines[5][80:120],
-            pixels_along_lines[5][120:160],
-            pixels_along_lines[5][160:],
-        ]
-        + [
-            pixels_along_lines[6][:40],
-            pixels_along_lines[6][40:80],
-            pixels_along_lines[6][80:120],
-            pixels_along_lines[6][120:160],
-            pixels_along_lines[6][160:],
-        ]
-    )
+    num_digits = len(INTERVV)
+    num_vertical_lines = num_digits
+    num_horizontal_lines = len(INTERVH)
+    data = pixels_along_lines[:num_vertical_lines]
+
+    segment_length = int(len(pixels_along_lines[num_vertical_lines]) / num_digits)
+
+    # Split the horizontal lines into segments
+    for line in pixels_along_lines[num_vertical_lines:]:
+        data.extend(
+            [
+                line[i * segment_length : (i + 1) * segment_length]
+                for i in range(num_digits)
+            ]
+        )
 
     text = ""
-    for i in range(5):
-        text += str(OCRdigit(data[i], data[i + 5], data[i + 10]))
+    for i in range(num_digits):
+        try:
+            digit = str(
+                OCRdigit(
+                    data[i], data[i + num_digits], data[i + 2 * num_digits]
+                )
+            )
+        except Exception:
+            digit = "?"  # Use '?' for unrecognized digits
+        text += digit
     return text
 
 
@@ -211,7 +221,9 @@ def data2excel(data):
         writeDate(worksheet, row, 0, date, dateFormat)
         worksheet.write(row, 1, value)
         try:
-            worksheet.write(row, 2, float(value[:6]))
+            # Remove any leading '?' from value
+            clean_value = value.lstrip("?")
+            worksheet.write(row, 2, float(clean_value))
         except Exception as _:
             pass
         row += 1
@@ -237,6 +249,7 @@ def main(refImage):
 
     data2excel(data)
 
+
 # Initialize the Rich console
 console = Console()
 
@@ -244,14 +257,16 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         imagePath = sys.argv[1]
         console.print(
-            Markdown(f"""
+            Markdown(
+                f"""
 > You have provided the following image: `{imagePath}`
 
 In the next step:
   1. Draw a polygon around the device digits by clicking: top-left, top-right, bottom-right, bottom-left vertices.
   2. Confirm by pressing Enter.
                                
-The program will process all images and save the results to `data.xlsx`.""")
+The program will process all images and save the results to `data.xlsx`."""
+            )
         )
         input("\nPress Enter to start processing...")
         # *** Call the main function to process the image ***
@@ -261,9 +276,11 @@ The program will process all images and save the results to `data.xlsx`.""")
                 "All data has been processed and saved to data.xlsx", style="bold green"
             )
         )
-        input("""
+        input(
+            """
 Do not forget to rename the excel file to the correct name to avoid overwriting next time.
-Press Enter to exit...""")
+Press Enter to exit..."""
+        )
 
     else:
         instructions = """
